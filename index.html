@@ -1,0 +1,560 @@
+<!doctype html>
+<html lang="hu">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>KÜLKER QR generátor (preset + ACT + export, mod11)</title>
+
+  <!-- QRCode.js -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+  <!-- JSZip: export ZIP-be -->
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+
+  <style>
+    :root{
+      --bg:#0b1220; --muted:#9fb0d0; --text:#eaf0ff; --accent:#55a6ff;
+      --border:rgba(255,255,255,.10); --shadow:0 10px 30px rgba(0,0,0,.35); --radius:16px;
+    }
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: radial-gradient(1200px 600px at 20% 10%, rgba(85,166,255,.22), transparent 55%),
+                  radial-gradient(900px 500px at 90% 20%, rgba(158,95,255,.18), transparent 55%),
+                  var(--bg);
+      color:var(--text);
+    }
+    header{ padding: 28px 18px 10px; max-width: 1100px; margin: 0 auto; }
+    h1{ margin: 0 0 8px; font-size: 22px; letter-spacing:.3px; }
+    .sub{ color: var(--muted); margin:0; line-height:1.5; font-size: 14px; }
+
+    .wrap{ max-width: 1100px; margin: 0 auto; padding: 18px; display: grid; gap: 14px; }
+    .panel{
+      background: rgba(18,27,47,.78);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 16px;
+      backdrop-filter: blur(8px);
+    }
+    .row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; justify-content:space-between; }
+    .row-left{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+
+    label{ font-size: 13px; color: var(--muted); }
+    select, input{
+      background: rgba(255,255,255,.06);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 10px 10px;
+      outline: none;
+      font-size: 14px;
+      min-width: 170px;
+    }
+
+    button{
+      background: linear-gradient(180deg, rgba(85,166,255,.95), rgba(85,166,255,.65));
+      border: 1px solid rgba(85,166,255,.35);
+      color: #071023;
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-weight: 700;
+      cursor:pointer;
+      box-shadow: 0 8px 18px rgba(85,166,255,.22);
+    }
+    button.secondary{
+      background: rgba(255,255,255,.08);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-weight: 600;
+      box-shadow:none;
+    }
+    button:active{ transform: translateY(1px); }
+
+    .hint{ font-size: 13px; color: var(--muted); margin-top: 10px; }
+    .error{
+      margin-top: 10px;
+      color: #ffd3d3;
+      background: rgba(255, 80, 80, .12);
+      border: 1px solid rgba(255,80,80,.25);
+      padding: 10px 12px;
+      border-radius: 12px;
+      display:none;
+      white-space: pre-wrap;
+    }
+
+    .grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+    .card{
+      background: rgba(255,255,255,.05);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px;
+      display:grid;
+      gap: 10px;
+    }
+    .badge{ display:inline-flex; gap:8px; align-items:center; font-size: 12px; color: var(--muted); }
+    .dot{ width:8px;height:8px;border-radius:999px;background: var(--accent); box-shadow: 0 0 0 4px rgba(85,166,255,.14); }
+    .title{ font-size: 14px; font-weight: 800; margin: 0; letter-spacing:.2px; }
+    pre{
+      margin:0;
+      padding: 10px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(0,0,0,.20);
+      overflow:auto;
+      font-size: 12px;
+      line-height: 1.4;
+      color: rgba(234,240,255,.92);
+    }
+    .qrbox{
+      background:#fff;
+      border-radius: 14px;
+      padding: 10px;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      min-height: 190px;
+    }
+    .actions{ display:flex; gap:8px; flex-wrap:wrap; }
+    .sectionTitle{ margin: 0 0 10px; font-size: 16px; font-weight: 900; letter-spacing:.2px; }
+    .mini{ font-size: 12px; color: var(--muted); }
+  </style>
+</head>
+
+<body>
+<header>
+  <h1>KÜLKER – QR kód generátor</h1>
+  <p class="sub">
+    Induláskor automatikusan legenerálja és kilistázza: LOC / ITEM / PART / CONT / ACT kódokat.<br/>
+    Checksum: <b>sum(charCode) % 11</b> → <b>2 karakter</b> (00..10). ACT-nál is ugyanez.
+  </p>
+</header>
+
+<div class="wrap">
+
+  <div class="panel">
+    <div class="row">
+      <div class="row-left">
+        <div>
+          <label>Preset verzió (minden automatikus kódhoz)</label><br/>
+          <select id="presetVersion">
+            <option value="1" selected>1</option>
+            <option value="2">2</option><option value="3">3</option><option value="4">4</option>
+            <option value="5">5</option><option value="6">6</option><option value="7">7</option>
+            <option value="8">8</option><option value="9">9</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row-left">
+        <button id="btnRegen" type="button">Presetek újragenerálása</button>
+        <button id="btnZip" type="button" class="secondary">Összes letöltése ZIP-ben</button>
+        <button id="btnTxt" type="button" class="secondary">Kódlista (TXT) letöltés</button>
+      </div>
+    </div>
+
+    <p class="hint">
+      A fájlnevek Windows-kompatibilisek: a tiltott karaktereket (pl. <code>|</code>, <code>:</code>) automatikusan cserélem.
+    </p>
+  </div>
+
+  <div class="panel">
+    <h2 class="sectionTitle">Kézi generálás (Típus + Kód legördülő)</h2>
+    <form id="manualForm" class="row" style="justify-content:flex-start;">
+      <div>
+        <label for="version">Verzió</label><br/>
+        <select name="version" id="version">
+          <option value="1" selected>1</option>
+          <option value="2">2</option><option value="3">3</option><option value="4">4</option>
+          <option value="5">5</option><option value="6">6</option><option value="7">7</option>
+          <option value="8">8</option><option value="9">9</option>
+        </select>
+      </div>
+
+      <div>
+        <label for="typeSel">Típus</label><br/>
+        <select id="typeSel">
+          <option value="LOC">LOC</option>
+          <option value="ITEM">ITEM</option>
+          <option value="PART">PART</option>
+          <option value="CONT">CONT</option>
+          <option value="ACT">ACT</option>
+        </select>
+      </div>
+
+      <div>
+        <label for="identSel">Kód / Azonosító</label><br/>
+        <select id="identSel"></select>
+      </div>
+
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        <label>&nbsp;</label>
+        <button type="submit">Készít</button>
+      </div>
+
+      <div class="mini" style="flex-basis:100%;">
+        A kézzel generált kódok is bekerülnek alul a “Kézzel generált” listába.
+      </div>
+    </form>
+
+    <div id="errBox" class="error"></div>
+  </div>
+
+  <div class="panel">
+    <h2 class="sectionTitle">Előre definiált QR-kódok (automatikus)</h2>
+    <div id="presetContainer" class="grid"></div>
+  </div>
+
+  <div class="panel">
+    <h2 class="sectionTitle">Kézzel generált QR-kódok</h2>
+    <div id="manualContainer" class="grid"></div>
+  </div>
+
+</div>
+
+<script>
+  // ----------------------------------------------------------
+  // 1) PRESET ADATOK (mindenhez mod11 checksum lesz számolva)
+  // ----------------------------------------------------------
+  const PRESETS_BY_TYPE = {
+    LOC:
+     {
+      group: "LOC (helyek)",
+      items: [
+        { label: "LOC_DOCK_01", ident: "LOC_DOCK_01" },
+        { label: "LOC_BUFFER_IN", ident: "LOC_BUFFER_IN" },
+        { label: "LOC_RAW_WH", ident: "LOC_RAW_WH" },
+        { label: "LOC_KITTING", ident: "LOC_KITTING" },
+        { label: "LOC_ASSEMBLY_01", ident: "LOC_ASSEMBLY_01" },
+        { label: "LOC_ASSEMBLY_02", ident: "LOC_ASSEMBLY_02" },
+        { label: "LOC_QC", ident: "LOC_QC" },
+        { label: "LOC_FG_WH", ident: "LOC_FG_WH" }
+      ]
+    },
+    ITEM: {
+      group: "ITEM (anyagok)",
+      items: [
+        { label: "ITEM_1001", ident: "ITEM_1001" },
+        { label: "ITEM_1002", ident: "ITEM_1002" },
+        { label: "ITEM_1003", ident: "ITEM_1003" },
+        { label: "ITEM_1004", ident: "ITEM_1004" },
+        { label: "ITEM_1005", ident: "ITEM_1005" },
+        { label: "ITEM_1006", ident: "ITEM_1006" },
+        { label: "ITEM_1007", ident: "ITEM_1007" },
+        { label: "ITEM_1008", ident: "ITEM_1008" },
+        { label: "ITEM_1009", ident: "ITEM_1009" },
+        { label: "ITEM_1010", ident: "ITEM_1010" }
+      ]
+    },
+    PART: {
+      group: "PART (alkatrészek)",
+      items: [
+        { label: "PART-A", ident: "PART-A" },
+        { label: "PART-B", ident: "PART-B" },
+        { label: "PART-C", ident: "PART-C" },
+        { label: "PART-D", ident: "PART-D" },
+        { label: "PART-E", ident: "PART-E" }
+      ]
+    },
+    CONT: {
+      group: "CONT (ládák / LPN)",
+      items: Array.from({length: 10}, (_,i) => {
+        const n = String(i+1).padStart(2,"0");
+        return { label: `BOX-${n}`, ident: `BOX-${n}` };
+      })
+    },
+    ACT: {
+      group: "ACT (műveletek)",
+      items: [
+        { label: "ARRIVAL",  ident: "ARRIVAL" },
+        { label: "MOVE",     ident: "MOVE" },
+        { label: "PICK",     ident: "PICK" },
+        { label: "PLACE",    ident: "PLACE" },
+        { label: "ASSEMBLY", ident: "ASSEMBLY" },
+        { label: "QC_OK",    ident: "QC_OK" },
+        { label: "QC_NOK",   ident: "QC_NOK" },
+        { label: "CLOSE",    ident: "CLOSE" }
+      ]
+    }
+  };
+
+  // ----------------------------------------------------------
+  // 2) CHECKSUM (marad: sum(charCode) % 11, 2 karakter)
+  // ----------------------------------------------------------
+  function checksumMod11(textWithTrailingPipe) {
+    let sum = 0;
+    for (let i = 0; i < textWithTrailingPipe.length; i++) {
+      sum += textWithTrailingPipe.charCodeAt(i);
+    }
+    const v = sum % 11;
+    return (v < 10) ? ("0" + v) : String(v); // 00..10
+  }
+
+  function buildKulkerCode(version, type, ident) {
+    const base = `KULKER|${version}|${type}|${ident}|`;
+    return base + checksumMod11(base);
+  }
+
+  // ----------------------------------------------------------
+  // 3) SEGÉDEK
+  // ----------------------------------------------------------
+  function safeFileName(s) {
+    return s
+      .replace(/[<>:"/\\|?*\u0000-\u001F]/g, "_")
+      .replace(/\s+/g, "_")
+      .slice(0, 180);
+  }
+
+  function getQrDataUrl(qrHost) {
+    const canvas = qrHost.querySelector("canvas");
+    if (canvas) return canvas.toDataURL("image/png");
+    const img = qrHost.querySelector("img");
+    if (img && img.src) return img.src;
+    return null;
+  }
+
+  function downloadDataUrl(dataUrl, filename) {
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  function showError(msg) {
+    const box = document.getElementById("errBox");
+    box.textContent = msg;
+    box.style.display = "block";
+  }
+  function clearError() {
+    const box = document.getElementById("errBox");
+    box.textContent = "";
+    box.style.display = "none";
+  }
+
+  // ----------------------------------------------------------
+  // 4) KÁRTYA
+  // ----------------------------------------------------------
+  function createQrCard({ group, version, type, label, fullCode }, containerEl) {
+    const card = document.createElement("div");
+    card.className = "card";
+
+    const badge = document.createElement("div");
+    badge.className = "badge";
+    badge.innerHTML = `<span class="dot"></span><span>${group} • v${version} • ${type}</span>`;
+
+    const title = document.createElement("h3");
+    title.className = "title";
+    title.textContent = label;
+
+    const pre = document.createElement("pre");
+    pre.textContent = fullCode;
+
+    const qrbox = document.createElement("div");
+    qrbox.className = "qrbox";
+
+    const qrHost = document.createElement("div");
+    qrHost.style.width = "170px";
+    qrHost.style.height = "170px";
+    qrbox.appendChild(qrHost);
+
+    qrHost.innerHTML = "";
+    new QRCode(qrHost, {
+      text: fullCode,
+      width: 170,
+      height: 170,
+      correctLevel: QRCode.CorrectLevel.H
+    });
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
+
+    const btnPng = document.createElement("button");
+    btnPng.type = "button";
+    btnPng.className = "secondary";
+    btnPng.textContent = "PNG letöltés";
+    btnPng.addEventListener("click", () => {
+      const dataUrl = getQrDataUrl(qrHost);
+      if (!dataUrl) return alert("Nem sikerült a QR képet kinyerni.");
+      const fn = safeFileName(fullCode) + ".png";
+      downloadDataUrl(dataUrl, fn);
+    });
+
+    const btnCopy = document.createElement("button");
+    btnCopy.type = "button";
+    btnCopy.className = "secondary";
+    btnCopy.textContent = "Kód másolása";
+    btnCopy.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(fullCode);
+        btnCopy.textContent = "Másolva ✓";
+        setTimeout(() => btnCopy.textContent = "Kód másolása", 900);
+      } catch {
+        alert("A másolás nem engedélyezett ebben a böngészőben/kontextusban.");
+      }
+    });
+
+    actions.appendChild(btnPng);
+    actions.appendChild(btnCopy);
+
+    card.dataset.fullCode = fullCode;
+    card.dataset.label = label;
+
+    card.appendChild(badge);
+    card.appendChild(title);
+    card.appendChild(qrbox);
+    card.appendChild(pre);
+    card.appendChild(actions);
+
+    containerEl.appendChild(card);
+    return card;
+  }
+
+  // ----------------------------------------------------------
+  // 5) MANUAL: Kód/Azonosító legördülő frissítése típus szerint
+  // ----------------------------------------------------------
+  function fillIdentDropdown(type) {
+    const sel = document.getElementById("identSel");
+    sel.innerHTML = "";
+    const items = PRESETS_BY_TYPE[type]?.items || [];
+    for (const it of items) {
+      const opt = document.createElement("option");
+      opt.value = it.ident;
+      opt.textContent = it.label;
+      sel.appendChild(opt);
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 6) PRESET RENDER (LOC/ITEM/PART/CONT/ACT mind generálva)
+  // ----------------------------------------------------------
+  function renderPresets() {
+    clearError();
+    const presetContainer = document.getElementById("presetContainer");
+    presetContainer.innerHTML = "";
+
+    const version = document.getElementById("presetVersion").value.trim();
+
+    const typesInOrder = ["LOC","ITEM","PART","CONT","ACT"];
+    for (const t of typesInOrder) {
+      const block = PRESETS_BY_TYPE[t];
+      for (const it of block.items) {
+        const fullCode = buildKulkerCode(version, t, it.ident);
+        createQrCard({
+          group: block.group,
+          version,
+          type: t,
+          label: it.label,
+          fullCode
+        }, presetContainer);
+      }
+    }
+  }
+
+  // ----------------------------------------------------------
+  // 7) MANUAL SUBMIT
+  // ----------------------------------------------------------
+  function addManualCode(version, type, ident) {
+    const fullCode = buildKulkerCode(version, type, ident);
+
+    if (fullCode.length > 300) {
+      showError(`Túl hosszú kód (${fullCode.length} karakter). Max 300.`);
+      return;
+    }
+
+    const manualContainer = document.getElementById("manualContainer");
+    createQrCard({
+      group: "MANUAL",
+      version,
+      type,
+      label: `${type} • ${ident}`,
+      fullCode
+    }, manualContainer);
+  }
+
+  document.getElementById("manualForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    clearError();
+
+    const version = document.getElementById("version").value.trim();
+    const type = document.getElementById("typeSel").value.trim();
+    const ident = document.getElementById("identSel").value;
+
+    if (!version) return showError("Hiányzik a Verzió.");
+    if (!type) return showError("Hiányzik a Típus.");
+    if (!ident) return showError("Hiányzik a Kód/Azonosító.");
+
+    addManualCode(version, type, ident);
+  });
+
+  document.getElementById("typeSel").addEventListener("change", (e) => {
+    fillIdentDropdown(e.target.value);
+  });
+
+  // ----------------------------------------------------------
+  // 8) EXPORT: TXT / ZIP
+  // ----------------------------------------------------------
+  function collectAllCards() {
+    return [
+      ...document.querySelectorAll("#presetContainer .card"),
+      ...document.querySelectorAll("#manualContainer .card")
+    ];
+  }
+
+  function buildCodesTxt() {
+    const cards = collectAllCards();
+    const lines = [];
+    for (const c of cards) {
+      const label = c.dataset.label || "";
+      const code = c.dataset.fullCode || "";
+      lines.push(`${label}\t${code}`);
+    }
+    return lines.join("\n");
+  }
+
+  document.getElementById("btnTxt").addEventListener("click", () => {
+    const txt = buildCodesTxt();
+    const blob = new Blob([txt], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    downloadDataUrl(url, "codes.txt");
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+  });
+
+  document.getElementById("btnZip").addEventListener("click", async () => {
+    const cards = collectAllCards();
+    if (!cards.length) return alert("Nincs mit exportálni.");
+
+    const zip = new JSZip();
+    const folder = zip.folder("qr");
+
+    folder.file("codes.txt", buildCodesTxt());
+
+    for (const c of cards) {
+      const code = c.dataset.fullCode || "";
+      const qrHost = c.querySelector(".qrbox > div");
+      const dataUrl = getQrDataUrl(qrHost);
+      if (!dataUrl) continue;
+
+      const base64 = dataUrl.split(",")[1];
+      const filename = safeFileName(code) + ".png";
+      folder.file(filename, base64, { base64: true });
+    }
+
+    const blob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(blob);
+    downloadDataUrl(url, "kulker_qr_export.zip");
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
+  });
+
+  // ----------------------------------------------------------
+  // 9) INIT
+  // ----------------------------------------------------------
+  document.getElementById("btnRegen").addEventListener("click", renderPresets);
+
+  document.addEventListener("DOMContentLoaded", () => {
+    fillIdentDropdown(document.getElementById("typeSel").value); // kézi: első feltöltés
+    renderPresets(); // automatikus lista induláskor
+  });
+</script>
+</body>
+</html>
